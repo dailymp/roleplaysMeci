@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { RoleplaySession, Evaluation, Persona, Objecion } from "@/lib/types";
+import { RoleplaySession, Evaluation, Persona, Objecion, AutoEvaluation } from "@/lib/types";
 import { RUBRICA, FASE_LABEL, FASE_COLOR, FASE_MAX, bandaColor } from "@/lib/rubrica";
+import { construirContraste, resumirContraste, type ResumenContraste } from "@/lib/contraste";
+import type { ContrasteItem } from "@/lib/types";
+import AutoevaluacionPanel from "@/components/AutoevaluacionPanel";
 
 const FASES = ["M", "E", "C", "I"] as const;
 
@@ -14,6 +17,7 @@ export default function SesionDetallePage() {
 
   const [session, setSession] = useState<RoleplaySession | null>(null);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [auto, setAuto] = useState<AutoEvaluation | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,6 +33,12 @@ export default function SesionDetallePage() {
       }
       const { data: e } = await supabase.from("evaluations").select("*").eq("session_id", sessionId).maybeSingle();
       setEvaluation(e as Evaluation | null);
+      const { data: a } = await supabase
+        .from("auto_evaluations")
+        .select("*")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      setAuto(a as AutoEvaluation | null);
       setLoading(false);
     })();
   }, [sessionId]);
@@ -41,6 +51,13 @@ export default function SesionDetallePage() {
     objeciones = evaluation?.notas ? JSON.parse(evaluation.notas) : [];
   } catch {
     objeciones = [];
+  }
+
+  let contraste: ContrasteItem[] | null = null;
+  let resumen: ResumenContraste | null = null;
+  if (auto && evaluation) {
+    contraste = construirContraste(auto, evaluation);
+    resumen = resumirContraste(contraste, auto.total_score, evaluation.total_score);
   }
 
   return (
@@ -56,22 +73,67 @@ export default function SesionDetallePage() {
         </span>
       </div>
 
+      {auto && (
+        <div className="mt-4">
+          <AutoevaluacionPanel auto={auto} />
+        </div>
+      )}
+
       {!evaluation ? (
-        <div className="card mt-6 p-8 text-center">
-          <p className="text-sm text-ink-secondary">Esta sesión aún no tiene evaluación.</p>
+        <div className="card mt-4 p-8 text-center">
+          <p className="text-sm text-ink-secondary">
+            {auto
+              ? "Falta tu autoevaluación. Puntúate y el sistema te dirá dónde tu lectura y la suya no coinciden."
+              : "Esta sesión aún no tiene evaluación."}
+          </p>
           <a href={`/roleplay/${sessionId}/evaluar`} className="btn-primary mt-4 inline-block">
-            Evaluar ahora
+            Autoevaluarme
           </a>
         </div>
       ) : (
         <>
           <div className="card mt-4 p-6 text-center">
-            <p className="text-xs text-muted">Puntuación total</p>
+            <p className="text-xs text-muted">Tu puntuación</p>
             <p className="text-4xl font-bold" style={{ color: bandaColor(evaluation.total_score) }}>
               {evaluation.total_score} <span className="text-lg text-muted">/ 85</span>
             </p>
             <p className="mx-auto mt-2 max-w-sm text-xs text-ink-secondary">{evaluation.banda}</p>
           </div>
+
+          {contraste && resumen && (
+            <div className="card mt-4 p-5">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 className="text-sm font-bold">Tú vs. el sistema</h2>
+                <p className="text-sm font-bold" style={{ color: Math.abs(resumen.desvioTotal) <= 5 ? "#0ca30c" : "#eb6834" }}>
+                  {resumen.desvioTotal > 0 ? "+" : ""}
+                  {resumen.desvioTotal} pts
+                </p>
+              </div>
+              <p className="mt-2 text-sm text-ink-secondary">{resumen.lectura}</p>
+
+              {resumen.sobrevalorados.length > 0 && (
+                <>
+                  <p className="mt-4 text-xs font-bold text-critical">Donde te perdonaste</p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {resumen.sobrevalorados.map((i) => (
+                      <FilaContraste key={i.id} item={i} />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {resumen.infravalorados.length > 0 && (
+                <>
+                  <p className="mt-4 text-xs font-bold text-good">Donde fuiste más dura de la cuenta</p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {resumen.infravalorados.map((i) => (
+                      <FilaContraste key={i.id} item={i} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-4 gap-2">
             {FASES.map((f) => (
@@ -181,6 +243,23 @@ export default function SesionDetallePage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function FilaContraste({ item }: { item: ContrasteItem }) {
+  return (
+    <div className="rounded-lg border border-hairline p-3 text-xs">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-ink-secondary">{item.texto}</p>
+        <p className="flex-shrink-0 font-bold">
+          <span className="text-muted">tú </span>
+          {item.propia}
+          <span className="text-muted"> · sistema </span>
+          <span style={{ color: FASE_COLOR[item.fase] }}>{item.auto}</span>
+        </p>
+      </div>
+      {item.evidencia && <p className="mt-1 italic text-muted">{item.evidencia}</p>}
     </div>
   );
 }

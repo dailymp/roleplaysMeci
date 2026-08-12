@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { TranscriptTurn } from "@/lib/types";
+import { generarYGuardarAutoevaluacion } from "@/lib/autoevaluacion-server";
+
+// Recuperar la transcripción de ElevenLabs y luego evaluarla con el LLM.
+export const maxDuration = 120;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -97,5 +101,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, durationSeconds, speakRatio: ratio, turns: transcript.length });
+  // La autoevaluación del sistema es obligatoria: toda sesión terminada tiene
+  // feedback, con o sin autoevaluación manual de Daily. Si falla, la sesión ya
+  // está guardada y se puede reintentar desde /api/session/evaluate.
+  let autoevaluacionError: string | null = null;
+  try {
+    await generarYGuardarAutoevaluacion(supabase, sessionId, user.id, transcript, session.persona_id as string);
+  } catch (e) {
+    autoevaluacionError = e instanceof Error ? e.message : "No se pudo generar la autoevaluación.";
+  }
+
+  return NextResponse.json({
+    ok: true,
+    durationSeconds,
+    speakRatio: ratio,
+    turns: transcript.length,
+    autoevaluacionError,
+  });
 }

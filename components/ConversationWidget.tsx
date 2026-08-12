@@ -5,6 +5,9 @@ import { useCallback, useRef, useState } from "react";
 import { Persona, Modo, TranscriptTurn } from "@/lib/types";
 import { buildSystemPrompt, buildFirstMessage } from "@/lib/persona-prompt";
 
+type StartSessionArgs = Parameters<ReturnType<typeof useConversation>["startSession"]>[0];
+type SessionOverrides = NonNullable<StartSessionArgs["overrides"]>;
+
 interface Props {
   persona: Persona;
   modo: Modo;
@@ -62,16 +65,20 @@ export default function ConversationWidget({ persona, modo, onConnected, onEnded
       const { signedUrl } = await res.json();
 
       startRef.current = Date.now();
-      const conversationId = await conversation.startSession({
-        signedUrl,
-        overrides: {
-          agent: {
-            prompt: { prompt: buildSystemPrompt(persona, modo) },
-            firstMessage: buildFirstMessage(persona),
-            language: "es",
-          },
+      // La voz NO va dentro de `agent`: es un override hermano (`tts`). Si la persona
+      // no tiene voice_id se cae a la voz por defecto del agente.
+      const overrides: SessionOverrides = {
+        agent: {
+          prompt: { prompt: buildSystemPrompt(persona, modo) },
+          firstMessage: buildFirstMessage(persona),
+          language: "es",
         },
-      } as any);
+      };
+      if (persona.voice_id) {
+        overrides.tts = { voiceId: persona.voice_id };
+      }
+
+      const conversationId = await conversation.startSession({ signedUrl, overrides } as StartSessionArgs);
 
       if (typeof conversationId === "string") {
         onConnected(conversationId);

@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { RoleplaySession, Persona, Objecion } from "@/lib/types";
+import { RoleplaySession, Persona, Objecion, AutoEvaluation } from "@/lib/types";
 import { RUBRICA, FASE_LABEL, FASE_COLOR, calcularTotales } from "@/lib/rubrica";
 import PuntuacionSelector from "@/components/PuntuacionSelector";
+import AutoevaluacionPanel from "@/components/AutoevaluacionPanel";
 
 const FASES = ["M", "E", "C", "I"] as const;
 
@@ -16,6 +17,8 @@ export default function EvaluarPage() {
 
   const [session, setSession] = useState<RoleplaySession | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
+  const [auto, setAuto] = useState<AutoEvaluation | null>(null);
+  const [generando, setGenerando] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,20 +36,49 @@ export default function EvaluarPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase
-      .from("sessions")
-      .select("*")
-      .eq("id", sessionId)
-      .single()
-      .then(async ({ data }) => {
-        if (data) {
-          setSession(data as RoleplaySession);
-          const { data: p } = await supabase.from("personas").select("*").eq("id", data.persona_id).single();
-          setPersona(p as Persona);
-        }
-        setLoading(false);
-      });
+    (async () => {
+      const { data } = await supabase.from("sessions").select("*").eq("id", sessionId).single();
+      if (data) {
+        setSession(data as RoleplaySession);
+        const { data: p } = await supabase.from("personas").select("*").eq("id", data.persona_id).single();
+        setPersona(p as Persona);
+      }
+      const { data: a } = await supabase
+        .from("auto_evaluations")
+        .select("*")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      setAuto(a as AutoEvaluation | null);
+      setLoading(false);
+    })();
   }, [sessionId]);
+
+  async function generarAnalisis() {
+    setGenerando(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/session/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? "No se pudo generar el análisis.");
+      }
+      const supabase = createClient();
+      const { data: a } = await supabase
+        .from("auto_evaluations")
+        .select("*")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      setAuto(a as AutoEvaluation | null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo generar el análisis.");
+    } finally {
+      setGenerando(false);
+    }
+  }
 
   const totales = useMemo(() => calcularTotales(scores), [scores]);
   const itemsCompletos = RUBRICA.every((r) => scores[String(r.id)] >= 1);
@@ -119,25 +151,29 @@ export default function EvaluarPage() {
         Roleplay con {persona?.nombre ?? "tu prospecto"} · hazlo con la memoria fresca, sé honesta: un 5 se gana.
       </p>
 
-      {(session.duration_seconds || session.daily_speak_ratio) && (
+      {session.duration_seconds != null && (
         <div className="card mt-4 flex flex-wrap gap-6 p-4 text-sm">
-          {session.duration_seconds != null && (
-            <div>
-              <p className="text-xs text-muted">Duración</p>
-              <p className="font-bold">
-                {Math.floor(session.duration_seconds / 60)}m {session.duration_seconds % 60}s
-              </p>
-            </div>
-          )}
-          {session.daily_speak_ratio != null && (
-            <div>
-              <p className="text-xs text-muted">Tu ratio de habla (aprox.)</p>
-              <p className="font-bold">
-                {Math.round(session.daily_speak_ratio * 100)}%{" "}
-                <span className="font-normal text-muted">(objetivo ≤30%)</span>
-              </p>
-            </div>
-          )}
+          <div>
+            <p className="text-xs text-muted">Duración</p>
+            <p className="font-bold">
+              {Math.floor(session.duration_seconds / 60)}m {session.duration_seconds % 60}s
+            </p>
+          </div>
+        </div>
+      )}
+
+      {auto ? (
+        <div className="mt-4">
+          <AutoevaluacionPanel auto={auto} puntuacionOculta />
+        </div>
+      ) : (
+        <div className="card mt-4 flex items-center justify-between gap-4 p-4">
+          <p className="text-xs text-ink-secondary">
+            Todavía no hay análisis automático de esta llamada.
+          </p>
+          <button onClick={generarAnalisis} disabled={generando} className="btn-secondary text-xs">
+            {generando ? "Analizando…" : "Analizar transcripción"}
+          </button>
         </div>
       )}
 
