@@ -194,6 +194,13 @@ Responde SOLO con un objeto JSON válido con esta forma exacta:
 }`;
 }
 
+interface CuerpoChatCompletions {
+  model: string;
+  response_format: { type: "json_object" };
+  messages: { role: "user"; content: string }[];
+  temperature?: number;
+}
+
 async function llamarLLM(prompt: string): Promise<{ respuesta: RespuestaLLM; modelo: string }> {
   const baseUrl = process.env.EVAL_LLM_BASE_URL ?? "https://api.moonshot.ai/v1";
   const apiKey = process.env.EVAL_LLM_API_KEY ?? process.env.MOONSHOT_API_KEY;
@@ -201,18 +208,27 @@ async function llamarLLM(prompt: string): Promise<{ respuesta: RespuestaLLM; mod
 
   if (!apiKey) throw new Error("Sin EVAL_LLM_API_KEY: no hay modelo para leer la transcripción.");
 
+  // `temperature` va omitido por defecto: los modelos nuevos de OpenAI (gpt-5.x) sólo
+  // aceptan el valor por defecto y devuelven 400 con cualquier otro, así que mandar 0.2
+  // tumbaba la autoevaluación entera. Sólo se envía si EVAL_LLM_TEMPERATURE trae un
+  // número finito, para modelos que sí lo admiten (p. ej. Kimi).
+  const temperaturaCruda = process.env.EVAL_LLM_TEMPERATURE?.trim();
+  const temperatura = temperaturaCruda ? Number(temperaturaCruda) : NaN;
+
+  const cuerpo: CuerpoChatCompletions = {
+    model: modelo,
+    response_format: { type: "json_object" },
+    messages: [{ role: "user", content: prompt }],
+  };
+  if (Number.isFinite(temperatura)) cuerpo.temperature = temperatura;
+
   const res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: modelo,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [{ role: "user", content: prompt }],
-    }),
+    body: JSON.stringify(cuerpo),
   });
 
   if (!res.ok) {
