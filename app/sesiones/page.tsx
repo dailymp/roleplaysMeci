@@ -21,6 +21,9 @@ export default function SesionesPage() {
   useEffect(() => {
     const supabase = createClient();
     (async () => {
+      // Cierra por servidor las sesiones que quedaron colgadas al cerrar la pestaña.
+      await fetch("/api/session/cleanup", { method: "POST" }).catch(() => undefined);
+
       const { data: sessions } = await supabase
         .from("sessions")
         .select("id, created_at, status, persona_id")

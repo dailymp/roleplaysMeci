@@ -13,8 +13,13 @@ import { MetricasTranscripcion, TranscriptTurn } from "./types";
 /** Velocidad de habla media en español conversacional, para estimar duraciones. */
 const CARACTERES_POR_SEGUNDO = 14;
 
+/**
+ * Precio = siempre una cifra. Sin el número, palabras como "inversión" o "precio"
+ * daban falsos positivos ("estás gastando mucho en inversión de publicidad") y
+ * marcaban precio en llamadas donde nunca se llegó a darlo.
+ */
 const RE_PRECIO =
-  /(\d[\d.\s]*\s*(€|euros?|eur\b))|(\bprecio\b|\binversión\b|\bcuesta\b|\bson\s+\d[\d.]*\b)/i;
+  /(\d[\d.,]*\s*(€|euros?\b|eur\b))|((precio|inversión|coste|cuesta|vale|sale|son)\D{0,15}\d[\d.,]*)/i;
 
 const RE_CIERRE =
   /(¿?\s*(empezamos|arrancamos|lo hacemos|damos el paso|cerramos)\b)|(te (apunto|inscribo|reservo|dejo la plaza))|(quieres que (lo )?(empecemos|arranquemos|hagamos))|(cuál de las dos)|(¿te (parece|encaja|va) bien.*\?)|(firmamos)/i;

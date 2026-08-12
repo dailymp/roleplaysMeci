@@ -1,22 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { TranscriptTurn } from "@/lib/types";
+import { recuperarConversacion, speakRatio } from "@/lib/elevenlabs";
 import { generarYGuardarAutoevaluacion } from "@/lib/autoevaluacion-server";
 
 // Recuperar la transcripción de ElevenLabs y luego evaluarla con el LLM.
 export const maxDuration = 120;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function speakRatio(transcript: TranscriptTurn[]): number | null {
-  if (!transcript.length) return null;
-  const userChars = transcript.filter((t) => t.role === "user").reduce((s, t) => s + t.message.length, 0);
-  const totalChars = transcript.reduce((s, t) => s + t.message.length, 0);
-  if (totalChars === 0) return null;
-  return Math.round((userChars / totalChars) * 100) / 100;
-}
 
 export async function POST(req: Request) {
   const supabase = createClient();
@@ -27,7 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
   }
 
-  const { sessionId } = await req.json();
+  const { sessionId } = (await req.json()) as { sessionId?: string };
   if (!sessionId) {
     return NextResponse.json({ error: "Falta sessionId." }, { status: 400 });
   }
@@ -51,39 +40,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  const conversationId = session.elevenlabs_conversation_id as string | null;
-
-  if (apiKey && conversationId) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(`https://api.elevenlabs.io/v1/convai/conversations/${conversationId}`, {
-          headers: { "xi-api-key": apiKey },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "processing") {
-            await sleep(1500);
-            continue;
-          }
-          if (Array.isArray(data.transcript) && data.transcript.length) {
-            transcript = data.transcript.map((t: any) => ({
-              role: t.role === "user" ? "user" : "agent",
-              message: t.message ?? "",
-              time_in_call_secs: t.time_in_call_secs,
-            }));
-          }
-          if (typeof data?.metadata?.call_duration_secs === "number") {
-            durationSeconds = data.metadata.call_duration_secs;
-          }
-          break;
-        }
-      } catch {
-        // se queda con lo que ya tenemos guardado del cliente
-        break;
-      }
-    }
-  }
+  const recuperada = await recuperarConversacion(session.elevenlabs_conversation_id as string | null);
+  if (recuperada.transcript) transcript = recuperada.transcript;
+  if (recuperada.durationSeconds != null) durationSeconds = recuperada.durationSeconds;
 
   const ratio = speakRatio(transcript);
 
