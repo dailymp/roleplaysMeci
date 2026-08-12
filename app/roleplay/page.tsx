@@ -88,9 +88,9 @@ export default function RoleplayPage() {
           <button
             key={p.id}
             onClick={() => setSelected(p.id)}
-            className={`card p-4 text-left transition ${
-              selected === p.id ? "ring-2 ring-offset-2" : "hover:border-ink"
-            }`}
+            type="button"
+            aria-pressed={selected === p.id}
+            className="card p-4 text-left transition hover:border-ink"
             style={selected === p.id ? { borderColor: p.color, boxShadow: `0 0 0 2px ${p.color}` } : undefined}
           >
             <div className="flex items-center justify-between">
@@ -115,13 +115,25 @@ export default function RoleplayPage() {
             {MODOS.map((m) => (
               <button
                 key={m.value}
+                type="button"
                 onClick={() => setModo(m.value)}
-                className={`card p-3 text-left text-xs transition ${
-                  modo === m.value ? "border-ink" : "hover:border-ink"
-                }`}
+                aria-pressed={modo === m.value}
+                className="card p-3 text-left text-xs transition hover:border-ink"
+                style={
+                  modo === m.value
+                    ? { borderColor: "#0b0b0b", boxShadow: "0 0 0 2px #0b0b0b", background: "#f0efec" }
+                    : undefined
+                }
               >
-                <span className="font-semibold">{m.label}</span>
-                <p className="mt-1 text-muted">{m.desc}</p>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">{m.label}</span>
+                  {modo === m.value && (
+                    <span className="font-bold text-ink" aria-hidden>
+                      ✓
+                    </span>
+                  )}
+                </span>
+                <span className="mt-1 block text-muted">{m.desc}</span>
               </button>
             ))}
           </div>

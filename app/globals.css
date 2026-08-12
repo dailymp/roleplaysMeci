@@ -11,47 +11,53 @@ body {
   color: #0b0b0b;
 }
 
-.card {
-  background: #fcfcfb;
-  border: 1px solid #e1e0d9;
-  border-radius: 16px;
-}
+/* Estas clases van en la capa "components" para que cualquier utilidad de
+   Tailwind (border-ink, bg-*, etc.) aplicada en el JSX pueda sobreescribirlas.
+   Si se declaran fuera de @layer, quedan DESPUÉS de las utilities en la hoja
+   de estilos y ganan por orden de cascada, anulando el estado seleccionado. */
+@layer components {
+  .card {
+    background: #fcfcfb;
+    border: 1px solid #e1e0d9;
+    border-radius: 16px;
+  }
 
-.btn-primary {
-  background: #0b0b0b;
-  color: #fcfcfb;
-  border-radius: 10px;
-  padding: 0.65rem 1.25rem;
-  font-weight: 600;
-  transition: opacity 0.15s ease;
-}
-.btn-primary:hover {
-  opacity: 0.85;
-}
-.btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+  .btn-primary {
+    background: #0b0b0b;
+    color: #fcfcfb;
+    border-radius: 10px;
+    padding: 0.65rem 1.25rem;
+    font-weight: 600;
+    transition: opacity 0.15s ease;
+  }
+  .btn-primary:hover {
+    opacity: 0.85;
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
-.btn-secondary {
-  background: transparent;
-  color: #0b0b0b;
-  border: 1px solid #c3c2b7;
-  border-radius: 10px;
-  padding: 0.65rem 1.25rem;
-  font-weight: 600;
-  transition: background 0.15s ease;
-}
-.btn-secondary:hover {
-  background: #f0efec;
-}
+  .btn-secondary {
+    background: transparent;
+    color: #0b0b0b;
+    border: 1px solid #c3c2b7;
+    border-radius: 10px;
+    padding: 0.65rem 1.25rem;
+    font-weight: 600;
+    transition: background 0.15s ease;
+  }
+  .btn-secondary:hover {
+    background: #f0efec;
+  }
 
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  border-radius: 999px;
-  padding: 0.15rem 0.65rem;
-  font-size: 0.75rem;
-  font-weight: 600;
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    padding: 0.15rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
 }
