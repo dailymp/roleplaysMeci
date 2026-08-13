@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AutoEvaluation } from "@/lib/types";
-import { RUBRICA, FASE_COLOR, FASE_MAX, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
+import { AutoEvaluation, Fase } from "@/lib/types";
+import { RUBRICA, FASE_LABEL, FASE_COLOR, FASE_MAX, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
 
 const FASES = ["M", "E", "C", "I"] as const;
 
@@ -65,6 +65,47 @@ export function MetricasPanel({ auto }: { auto: AutoEvaluation }) {
   );
 }
 
+/** Cuánto tiempo pasaste en cada fase MECI, estimado por patrones de texto (no marcadores exactos). */
+export function FasesTiempoPanel({ tiempos }: { tiempos: Record<Fase, number> | undefined }) {
+  if (!tiempos) return null;
+  const total = FASES.reduce((s, f) => s + (tiempos[f] ?? 0), 0);
+  if (total <= 0) return null;
+
+  const filas = FASES.map((f) => {
+    const segs = tiempos[f] ?? 0;
+    const pct = (segs / total) * 100;
+    const objetivo = (FASE_MAX[f] / TOTAL_MAX) * 100;
+    return { f, segs, pct, objetivo };
+  });
+  const peor = filas.reduce((a, b) => (Math.abs(b.pct - b.objetivo) > Math.abs(a.pct - a.objetivo) ? b : a));
+
+  return (
+    <div className="mt-3">
+      <p className="mb-2 text-xs text-muted">Tiempo por fase (estimado por patrones de texto)</p>
+      <div className="flex h-3 w-full overflow-hidden rounded-full">
+        {filas.map(({ f, pct }) => (
+          <div key={f} title={`${FASE_LABEL[f]}: ${Math.round(pct)}%`} style={{ width: `${pct}%`, backgroundColor: FASE_COLOR[f] }} />
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-2 text-center text-[10px]">
+        {filas.map(({ f, segs, pct, objetivo }) => (
+          <div key={f}>
+            <p className="font-bold" style={{ color: FASE_COLOR[f] }}>{f}</p>
+            <p className="font-semibold">{segundos(segs)}</p>
+            <p className="text-muted">{Math.round(pct)}% · obj {Math.round(objetivo)}%</p>
+          </div>
+        ))}
+      </div>
+      {Math.abs(peor.pct - peor.objetivo) >= 10 && (
+        <p className="mt-2 text-xs text-ink-secondary">
+          {FASE_LABEL[peor.f]} se llevó {peor.pct > peor.objetivo ? "más" : "menos"} tiempo del habitual (
+          {Math.round(peor.pct)}% vs {Math.round(peor.objetivo)}% objetivo).
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Metrica({ label, valor, nota, malo }: { label: string; valor: string; nota: string; malo: boolean }) {
   return (
     <div className="rounded-lg px-3 py-2" style={{ backgroundColor: malo ? "#d03b3b12" : "#0ca30c12" }}>
@@ -81,11 +122,29 @@ interface Props {
   auto: AutoEvaluation;
   /** En la página de autoevaluación se oculta la puntuación para no condicionarla. */
   puntuacionOculta?: boolean;
+  /** Nombre del prospecto simulado, solo para el nombre de fichero y la cabecera del PDF. */
+  nombreProspecto?: string;
 }
 
-export default function AutoevaluacionPanel({ auto, puntuacionOculta = false }: Props) {
+export default function AutoevaluacionPanel({ auto, puntuacionOculta = false, nombreProspecto = "tu prospecto" }: Props) {
   const [abierto, setAbierto] = useState(!puntuacionOculta);
   const [detalle, setDetalle] = useState(false);
+  const [descargando, setDescargando] = useState(false);
+  const [errorPDF, setErrorPDF] = useState<string | null>(null);
+
+  async function descargarPDF() {
+    setDescargando(true);
+    setErrorPDF(null);
+    try {
+      const { generarInformePDF } = await import("@/lib/pdf-informe");
+      await generarInformePDF(auto, nombreProspecto);
+    } catch (e) {
+      console.error("No se pudo generar el PDF:", e);
+      setErrorPDF("No se pudo generar el PDF. Inténtalo de nuevo.");
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   return (
     <div className="card p-5">
@@ -116,6 +175,7 @@ export default function AutoevaluacionPanel({ auto, puntuacionOculta = false }: 
 
       <div className="mt-4">
         <MetricasPanel auto={auto} />
+        <FasesTiempoPanel tiempos={auto.metricas?.tiempo_por_fase} />
       </div>
 
       {puntuacionOculta && !abierto && (
@@ -126,6 +186,13 @@ export default function AutoevaluacionPanel({ auto, puntuacionOculta = false }: 
 
       {abierto && (
         <>
+          <div className="mt-4 flex items-center gap-3">
+            <button onClick={descargarPDF} disabled={descargando} className="btn-secondary text-xs">
+              {descargando ? "Generando PDF…" : "Descargar PDF"}
+            </button>
+            {errorPDF && <p className="text-xs font-medium text-critical">{errorPDF}</p>}
+          </div>
+
           {puntuacionOculta && (
             <div className="mt-4 flex items-baseline gap-2">
               <p className="text-xs text-muted">El sistema te pone</p>

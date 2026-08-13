@@ -164,7 +164,7 @@ export default function EvaluarPage() {
 
       {auto ? (
         <div className="mt-4">
-          <AutoevaluacionPanel auto={auto} puntuacionOculta />
+          <AutoevaluacionPanel auto={auto} puntuacionOculta nombreProspecto={persona?.nombre} />
         </div>
       ) : (
         <div className="card mt-4 flex items-center justify-between gap-4 p-4">

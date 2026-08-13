@@ -1,9 +1,15 @@
 "use client";
 
 import { useConversation } from "@elevenlabs/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Persona, Modo, TranscriptTurn } from "@/lib/types";
 import { buildSystemPrompt, buildFirstMessage } from "@/lib/persona-prompt";
+
+function formatoMMSS(segundos: number): string {
+  const m = Math.floor(segundos / 60);
+  const s = segundos % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 type StartSessionArgs = Parameters<ReturnType<typeof useConversation>["startSession"]>[0];
 type SessionOverrides = NonNullable<StartSessionArgs["overrides"]>;
@@ -18,6 +24,7 @@ interface Props {
 export default function ConversationWidget({ persona, modo, onConnected, onEnded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
   const transcriptRef = useRef<TranscriptTurn[]>([]);
   const startRef = useRef<number>(0);
 
@@ -47,6 +54,18 @@ export default function ConversationWidget({ persona, modo, onConnected, onEnded
     },
   });
 
+  const isConnected = conversation.status === "connected";
+
+  // Cronómetro en vivo: se refresca cada segundo mientras dura la llamada.
+  useEffect(() => {
+    if (!isConnected) return;
+    setElapsedSecs(Math.round((Date.now() - startRef.current) / 1000));
+    const id = setInterval(() => {
+      setElapsedSecs(Math.round((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isConnected]);
+
   const start = useCallback(async () => {
     setError(null);
     setNotConfigured(false);
@@ -65,6 +84,7 @@ export default function ConversationWidget({ persona, modo, onConnected, onEnded
       const { signedUrl } = await res.json();
 
       startRef.current = Date.now();
+      setElapsedSecs(0);
       // La voz NO va dentro de `agent`: es un override hermano (`tts`). Si la persona
       // no tiene voice_id se cae a la voz por defecto del agente.
       const overrides: SessionOverrides = {
@@ -112,7 +132,6 @@ export default function ConversationWidget({ persona, modo, onConnected, onEnded
   }
 
   const status = conversation.status;
-  const isConnected = status === "connected";
 
   return (
     <div className="card flex flex-col items-center gap-4 p-8">
@@ -124,6 +143,8 @@ export default function ConversationWidget({ persona, modo, onConnected, onEnded
       >
         🎙️
       </div>
+
+      {isConnected && <p className="font-mono text-3xl font-bold tabular-nums text-ink">{formatoMMSS(elapsedSecs)}</p>}
 
       <p className="text-sm font-semibold text-ink-secondary">
         {status === "connecting"

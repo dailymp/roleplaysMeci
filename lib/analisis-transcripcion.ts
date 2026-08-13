@@ -1,4 +1,4 @@
-import { MetricasTranscripcion, TranscriptTurn } from "./types";
+import { Fase, MetricasTranscripcion, TranscriptTurn } from "./types";
 
 /**
  * Análisis determinista de la transcripción. Nada de esto pasa por un LLM: son
@@ -35,6 +35,16 @@ const RE_DOS_OPCIONES =
 const RE_TIE_DOWN_G =
   /(¿\s*(me sigues|tiene sentido|estamos de acuerdo|estás? de acuerdo|te hace sentido|está claro|queda claro|no crees)\s*\?)|(\b(verdad|cierto)\s*\?)/gi;
 
+/** Primera señal de que Daily entró en Empuje: coste de no actuar, storytelling o visión de futuro. */
+const RE_EMPUJE_INICIO =
+  /(cada mes|si no haces nada|estás perdiendo|te cuesta|dejar de|seguir igual|un cliente|un caso|hace poco|te cuento|igual que tú|me pasó|dentro de (un año|12 meses)|imagina|cómo sería|en seis meses|te ves)/i;
+
+/** Señal de que Daily entró en Implementación: pidió el cierre, cobró o agendó (buscada sólo después del precio). */
+const RE_CIERRE_O_PAGO = new RegExp(
+  `${RE_CIERRE.source}|(tarjeta|enlace de pago|dep[oó]sito|reserva|primer pago|lo dejamos pagado|agendo|agendamos)`,
+  "i"
+);
+
 function duracionEstimada(turno: TranscriptTurn): number {
   return Math.max(1, Math.round(turno.message.length / CARACTERES_POR_SEGUNDO));
 }
@@ -53,6 +63,45 @@ function marcasDeTiempo(transcript: TranscriptTurn[]): number[] {
   });
 }
 
+function primerIndiceEnRango(transcript: TranscriptTurn[], desde: number, hasta: number, re: RegExp): number {
+  const limite = hasta < 0 ? transcript.length : hasta;
+  for (let i = Math.max(0, desde); i < limite; i++) {
+    if (transcript[i].role === "user" && re.test(transcript[i].message)) return i;
+  }
+  return -1;
+}
+
+/**
+ * Segmenta la llamada en M/E/C/I por tiempo, usando las mismas señales de texto que ya
+ * detectan precio/cierre/agenda. Es una estimación, no marcadores exactos: si una fase no
+ * deja ninguna señal detectable, su tiempo se reparte en la fase anterior o siguiente según
+ * corresponda (p. ej. ir directa al precio sin pasar por Empuje da E = 0, lo cual es en sí
+ * mismo una señal real, no un fallo del cálculo).
+ */
+function analizarFasesPorTiempo(transcript: TranscriptTurn[]): Record<Fase, number> {
+  if (!transcript.length) return { M: 0, E: 0, C: 0, I: 0 };
+
+  const tiempos = marcasDeTiempo(transcript);
+  const ultimo = transcript.length - 1;
+  const finLlamada = tiempos[ultimo] + duracionEstimada(transcript[ultimo]);
+
+  const idxC = transcript.findIndex((t) => t.role === "user" && RE_PRECIO.test(t.message));
+  const idxE = primerIndiceEnRango(transcript, 0, idxC, RE_EMPUJE_INICIO);
+  const idxI = idxC >= 0 ? primerIndiceEnRango(transcript, idxC + 1, -1, RE_CIERRE_O_PAGO) : -1;
+
+  const b4 = finLlamada;
+  const b3 = idxI >= 0 ? tiempos[idxI] : b4;
+  const b2 = idxC >= 0 ? tiempos[idxC] : b3;
+  const b1 = idxE >= 0 ? tiempos[idxE] : b2;
+
+  return {
+    M: Math.max(0, b1),
+    E: Math.max(0, b2 - b1),
+    C: Math.max(0, b3 - b2),
+    I: Math.max(0, b4 - b3),
+  };
+}
+
 export function analizarTranscripcion(transcript: TranscriptTurn[]): MetricasTranscripcion {
   const vacio: MetricasTranscripcion = {
     ratio_habla: null,
@@ -66,6 +115,7 @@ export function analizarTranscripcion(transcript: TranscriptTurn[]): MetricasTra
     preguntas_daily: 0,
     dos_opciones_detectado: false,
     tie_downs_count: 0,
+    tiempo_por_fase: { M: 0, E: 0, C: 0, I: 0 },
   };
   if (!transcript.length) return vacio;
 
@@ -121,6 +171,7 @@ export function analizarTranscripcion(transcript: TranscriptTurn[]): MetricasTra
     preguntas_daily: turnosDaily.reduce((s, t) => s + (t.message.match(/\?/g)?.length ?? 0), 0),
     dos_opciones_detectado: turnosDaily.some((t) => RE_DOS_OPCIONES.test(t.message)),
     tie_downs_count: turnosDaily.reduce((s, t) => s + (t.message.match(RE_TIE_DOWN_G)?.length ?? 0), 0),
+    tiempo_por_fase: analizarFasesPorTiempo(transcript),
   };
 }
 

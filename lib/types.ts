@@ -95,6 +95,11 @@ export interface MetricasTranscripcion {
   dos_opciones_detectado: boolean;
   /** Nº de tie-downs ("¿me sigues?", "¿tiene sentido?"...) detectados en las intervenciones de Daily. */
   tie_downs_count: number;
+  /**
+   * Segundos estimados en cada fase MECI, a partir de los mismos patrones de texto que
+   * detectan precio/cierre/agenda (no son marcadores exactos, es una segmentación aproximada).
+   */
+  tiempo_por_fase: Record<Fase, number>;
 }
 
 export interface ItemAutomatico {

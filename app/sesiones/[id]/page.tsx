@@ -75,7 +75,7 @@ export default function SesionDetallePage() {
 
       {auto && (
         <div className="mt-4">
-          <AutoevaluacionPanel auto={auto} />
+          <AutoevaluacionPanel auto={auto} nombreProspecto={persona?.nombre} />
         </div>
       )}
 
