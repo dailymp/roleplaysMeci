@@ -12,7 +12,8 @@ export async function generarYGuardarAutoevaluacion(
   sessionId: string,
   userId: string,
   transcript: TranscriptTurn[],
-  personaId: string
+  personaId: string,
+  duracionSegundos?: number | null
 ): Promise<AutoEvaluationInput> {
   const { data: persona, error: personaError } = await supabase
     .from("personas")
@@ -24,7 +25,7 @@ export async function generarYGuardarAutoevaluacion(
     throw new Error("No se encontró la persona de la sesión.");
   }
 
-  const evaluacion = await evaluarSesion(sessionId, userId, persona as Persona, transcript);
+  const evaluacion = await evaluarSesion(sessionId, userId, persona as Persona, transcript, duracionSegundos);
 
   const { error: upsertError } = await supabase
     .from("auto_evaluations")

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AutoEvaluation } from "@/lib/types";
-import { RUBRICA, FASE_COLOR, FASE_MAX, bandaColor } from "@/lib/rubrica";
+import { RUBRICA, FASE_COLOR, FASE_MAX, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
 
 const FASES = ["M", "E", "C", "I"] as const;
 
@@ -49,6 +49,18 @@ export function MetricasPanel({ auto }: { auto: AutoEvaluation }) {
         nota={m.agendo_siguiente_paso ? "con siguiente paso agendado" : "sin siguiente paso"}
         malo={!m.pidio_cierre}
       />
+      <Metrica
+        label="Dos opciones de cierre"
+        valor={m.dos_opciones_detectado ? "Sí" : "No"}
+        nota="crítico en la hoja MECI"
+        malo={!m.dos_opciones_detectado}
+      />
+      <Metrica
+        label="Tie-downs"
+        valor={String(m.tie_downs_count ?? 0)}
+        nota={'"¿me sigues?", "¿tiene sentido?"...'}
+        malo={!m.tie_downs_count}
+      />
     </div>
   );
 }
@@ -90,7 +102,7 @@ export default function AutoevaluacionPanel({ auto, puntuacionOculta = false }: 
           <div className="text-right">
             <p className="text-2xl font-bold" style={{ color: bandaColor(auto.total_score) }}>
               {auto.total_score}
-              <span className="text-sm text-muted"> / 85</span>
+              <span className="text-sm text-muted"> / {TOTAL_MAX}</span>
             </p>
           </div>
         )}
@@ -118,7 +130,7 @@ export default function AutoevaluacionPanel({ auto, puntuacionOculta = false }: 
             <div className="mt-4 flex items-baseline gap-2">
               <p className="text-xs text-muted">El sistema te pone</p>
               <p className="text-xl font-bold" style={{ color: bandaColor(auto.total_score) }}>
-                {auto.total_score} <span className="text-sm text-muted">/ 85</span>
+                {auto.total_score} <span className="text-sm text-muted">/ {TOTAL_MAX}</span>
               </p>
             </div>
           )}

@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   // está guardada y se puede reintentar desde /api/session/evaluate.
   let autoevaluacionError: string | null = null;
   try {
-    await generarYGuardarAutoevaluacion(supabase, sessionId, user.id, transcript, session.persona_id as string);
+    await generarYGuardarAutoevaluacion(supabase, sessionId, user.id, transcript, session.persona_id as string, durationSeconds);
   } catch (e) {
     autoevaluacionError = e instanceof Error ? e.message : "No se pudo generar la autoevaluación.";
   }

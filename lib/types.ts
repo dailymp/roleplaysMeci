@@ -91,6 +91,10 @@ export interface MetricasTranscripcion {
   agendo_siguiente_paso: boolean;
   /** Preguntas abiertas de Daily, como proxy de indagación real. */
   preguntas_daily: number;
+  /** Detectado por patrón: ofreció una elección entre dos opciones concretas de cierre. */
+  dos_opciones_detectado: boolean;
+  /** Nº de tie-downs ("¿me sigues?", "¿tiene sentido?"...) detectados en las intervenciones de Daily. */
+  tie_downs_count: number;
 }
 
 export interface ItemAutomatico {

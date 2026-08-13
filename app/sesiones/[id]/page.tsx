@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RoleplaySession, Evaluation, Persona, Objecion, AutoEvaluation } from "@/lib/types";
-import { RUBRICA, FASE_LABEL, FASE_COLOR, FASE_MAX, bandaColor } from "@/lib/rubrica";
+import { RUBRICA, FASE_LABEL, FASE_COLOR, FASE_MAX, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
 import { construirContraste, resumirContraste, type ResumenContraste } from "@/lib/contraste";
 import type { ContrasteItem } from "@/lib/types";
 import AutoevaluacionPanel from "@/components/AutoevaluacionPanel";
@@ -95,7 +95,7 @@ export default function SesionDetallePage() {
           <div className="card mt-4 p-6 text-center">
             <p className="text-xs text-muted">Tu puntuación</p>
             <p className="text-4xl font-bold" style={{ color: bandaColor(evaluation.total_score) }}>
-              {evaluation.total_score} <span className="text-lg text-muted">/ 85</span>
+              {evaluation.total_score} <span className="text-lg text-muted">/ {TOTAL_MAX}</span>
             </p>
             <p className="mx-auto mt-2 max-w-sm text-xs text-ink-secondary">{evaluation.banda}</p>
           </div>

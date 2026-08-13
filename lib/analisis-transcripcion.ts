@@ -27,6 +27,14 @@ const RE_CIERRE =
 const RE_AGENDA =
   /((lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\b)|(\bmañana\b)|(\bpasado mañana\b)|(\bel (día )?\d{1,2}\b)|(\ba las \d{1,2}([:.]\d{2})?\b)/i;
 
+/** Elegir entre dos opciones concretas, no un sí/no genérico: "cuál de las dos", "prefieres X o Y". */
+const RE_DOS_OPCIONES =
+  /(cuál de las dos|cual de las dos|prefieres (el|la|los|las)?\s*\S+\s+o\s+\S+|te (viene|va) mejor\s+\S+.{0,20}\so\s.{0,20}\?|opci[oó]n (a|1)\b.{0,40}opci[oó]n (b|2)\b)/i;
+
+/** Tie-downs: preguntas cortas para comprobar que el prospecto sigue alineado antes de avanzar. */
+const RE_TIE_DOWN_G =
+  /(¿\s*(me sigues|tiene sentido|estamos de acuerdo|estás? de acuerdo|te hace sentido|está claro|queda claro|no crees)\s*\?)|(\b(verdad|cierto)\s*\?)/gi;
+
 function duracionEstimada(turno: TranscriptTurn): number {
   return Math.max(1, Math.round(turno.message.length / CARACTERES_POR_SEGUNDO));
 }
@@ -56,6 +64,8 @@ export function analizarTranscripcion(transcript: TranscriptTurn[]): MetricasTra
     pidio_cierre: false,
     agendo_siguiente_paso: false,
     preguntas_daily: 0,
+    dos_opciones_detectado: false,
+    tie_downs_count: 0,
   };
   if (!transcript.length) return vacio;
 
@@ -109,6 +119,8 @@ export function analizarTranscripcion(transcript: TranscriptTurn[]): MetricasTra
       (t) => RE_AGENDA.test(t.message) && /(llamada|hablamos|nos vemos|te llamo|quedamos|agendo|reunión|reunion|sesión|sesion)/i.test(t.message)
     ),
     preguntas_daily: turnosDaily.reduce((s, t) => s + (t.message.match(/\?/g)?.length ?? 0), 0),
+    dos_opciones_detectado: turnosDaily.some((t) => RE_DOS_OPCIONES.test(t.message)),
+    tie_downs_count: turnosDaily.reduce((s, t) => s + (t.message.match(RE_TIE_DOWN_G)?.length ?? 0), 0),
   };
 }
 

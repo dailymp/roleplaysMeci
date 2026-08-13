@@ -35,10 +35,27 @@ function textoDaily(transcript: TranscriptTurn[]): string {
   return transcript.filter((t) => t.role === "user").map((t) => t.message).join(" \n");
 }
 
+/**
+ * Bandas de duración para el ítem 21 (manejo del tiempo). La hoja de origen no fija un
+ * número exacto de minutos, así que esto es un criterio propio de DailyMP (llamada de
+ * venta 1:1 estilo Top Closing), documentado aquí para poder ajustarlo si hace falta.
+ */
+function puntuarDuracion(segundos: number | null | undefined): { score: number; evidencia: string } {
+  if (segundos == null) return { score: 3, evidencia: "No hay duración registrada de la llamada." };
+  const min = segundos / 60;
+  let score: number;
+  if (min >= 20 && min <= 45) score = 5;
+  else if ((min >= 12 && min < 20) || (min > 45 && min <= 60)) score = 4;
+  else if ((min >= 7 && min < 12) || (min > 60 && min <= 75)) score = 3;
+  else score = 2;
+  return { score, evidencia: `Duración total de la llamada: ${Math.round(min)} min.` };
+}
+
 /** Puntuación de respaldo: sólo mira señales objetivas, es conservadora a propósito. */
 export function puntuacionHeuristica(
   transcript: TranscriptTurn[],
-  m: MetricasTranscripcion
+  m: MetricasTranscripcion,
+  duracionSegundos?: number | null
 ): { scores: Record<string, number>; evidencias: Record<string, string> } {
   const daily = textoDaily(transcript);
   const scores: Record<string, number> = {};
@@ -68,6 +85,14 @@ export function puntuacionHeuristica(
   set(5, hay(/(has probado|has intentado|conoces|qué has hecho|antes de esto|por qué crees)/i) ? 3 : 2,
     "Se busca indagación sobre el nivel de consciencia del prospecto.");
 
+  const dailyTurnos = transcript.filter((t) => t.role === "user");
+  const segundaMitad = dailyTurnos.slice(Math.floor(dailyTurnos.length / 2)).map((t) => t.message).join(" \n");
+  const controlSostenido = /(retomando|volvamos a|como te (comentaba|decía)|antes de seguir|te propongo que|dejame resumir|dejame que resuma|déjame resumir|déjame que resuma)/i.test(segundaMitad);
+  set(19, controlSostenido ? 4 : 2,
+    controlSostenido
+      ? "Se detectan redirecciones o resúmenes de control en la segunda mitad de la llamada."
+      : "No se detecta que retomara las riendas de la llamada más allá del arranque.");
+
   // E — Empuje
   set(6, hay(/(cada mes|si no haces nada|estás perdiendo|te cuesta|dejar de|seguir igual)/i) ? 3 : 2,
     "Se busca amplificación del coste de no actuar.");
@@ -83,12 +108,45 @@ export function puntuacionHeuristica(
     ? "No se detectó que llegara a dar el precio."
     : `Precio en el minuto ${Math.floor(m.precio_mencionado_secs / 60)}:${String(m.precio_mencionado_secs % 60).padStart(2, "0")}; silencio posterior ≈ ${sil ?? "?"}s.`);
 
+  set(20, m.tie_downs_count === 0 ? 2 : m.tie_downs_count <= 2 ? 3 : 4,
+    `${m.tie_downs_count} tie-down(s) detectados ("¿me sigues?", "¿tiene sentido?"...).`);
+
   // C — Cierre
   set(11, m.pidio_cierre ? 4 : 1, m.pidio_cierre ? "Hubo petición directa de cierre." : "No se detectó ninguna petición directa de cierre.");
-  set(12, 3, "El patrón validar → aislar → responder necesita lectura semántica.");
-  set(13, 3, "El manejo del «me lo tengo que pensar» necesita lectura semántica.");
+
+  const hayValidacion = hay(/(entiendo (que|tu|tú)|lo entiendo|tiene sentido lo que dices|es normal (que sientas|pensar))/i);
+  const hayAislamiento = hay(/(es lo único que te (frena|preocupa|detiene)|aparte de (eso|esto)|solo por eso|es la única raz[oó]n)/i);
+  set(
+    12,
+    hayValidacion && hayAislamiento ? 4 : hayValidacion || hayAislamiento ? 3 : 2,
+    hayValidacion && hayAislamiento
+      ? "Se detectan frases de validación y de aislamiento de la objeción."
+      : hayValidacion || hayAislamiento
+      ? "Se detecta solo una parte del patrón validar → aislar → responder."
+      : "No se detecta ni validación ni aislamiento explícitos de una objeción."
+  );
+
+  const RE_PENSARLO = /(me lo (tengo que|voy a) pensar|lo tengo que consultar|necesito pensarlo|lo hablo con)/i;
+  const RE_PROFUNDIZA = /(qué es concretamente|qué te genera (esa )?duda|cuéntame (más|qué)|es lo único que te|aparte de eso)/i;
+  const RE_CEDE = /(sin problema|tómate tu tiempo|tomate tu tiempo|cuando (lo )?decidas|te dejo pensarlo|cuando quieras me (dices|escribes))/i;
+  const idxPensarlo = transcript.findIndex((t) => t.role === "agent" && RE_PENSARLO.test(t.message));
+  if (idxPensarlo < 0) {
+    set(13, 3, "No se presentó un «me lo tengo que pensar» explícito del prospecto.");
+  } else {
+    const siguienteDaily = transcript.slice(idxPensarlo + 1).find((t) => t.role === "user");
+    const texto = siguienteDaily?.message ?? "";
+    if (RE_PROFUNDIZA.test(texto)) set(13, 4, "Tras el «me lo tengo que pensar», Daily siguió indagando el motivo real.");
+    else if (RE_CEDE.test(texto)) set(13, 2, "Tras el «me lo tengo que pensar», Daily cedió sin llevarlo al motivo real.");
+    else set(13, 3, "Hubo «me lo tengo que pensar», pero la respuesta de Daily no encaja con un patrón claro.");
+  }
+
   set(14, hay(/(plazas|solo quedan|hasta el|este mes|bonus|se acaba)/i) ? 3 : 2,
     "Se busca urgencia o escasez legítima.");
+
+  set(18, m.dos_opciones_detectado ? 4 : 2,
+    m.dos_opciones_detectado
+      ? "Se detecta una elección entre dos opciones concretas de cierre."
+      : "No se detecta que ofreciera dos opciones concretas: parece un sí/no genérico.");
 
   // I — Implementación
   set(15, hay(/(tarjeta|enlace de pago|depósito|deposito|reserva|primer pago|lo dejamos pagado)/i) ? 3 : 1,
@@ -98,13 +156,16 @@ export function puntuacionHeuristica(
   set(17, m.agendo_siguiente_paso ? 4 : 1,
     m.agendo_siguiente_paso ? "Se detectó cita de seguimiento." : "No se detectó segunda llamada agendada.");
 
+  const tiempo = puntuarDuracion(duracionSegundos);
+  set(21, tiempo.score, tiempo.evidencia);
+
   return { scores, evidencias };
 }
 
-function feedbackHeuristico(m: MetricasTranscripcion): Pick<
-  RespuestaLLM,
-  "puntos_fuertes" | "puntos_debiles" | "ejercicio_siguiente" | "resumen"
-> {
+function feedbackHeuristico(
+  m: MetricasTranscripcion,
+  duracionSegundos?: number | null
+): Pick<RespuestaLLM, "puntos_fuertes" | "puntos_debiles" | "ejercicio_siguiente" | "resumen"> {
   const fuertes: string[] = [];
   const debiles: string[] = [];
 
@@ -126,6 +187,15 @@ function feedbackHeuristico(m: MetricasTranscripcion): Pick<
   if (m.agendo_siguiente_paso) fuertes.push("Cerraste con un siguiente paso concreto.");
   else debiles.push("Colgaste sin fecha ni hora para el siguiente paso.");
 
+  if (m.dos_opciones_detectado) fuertes.push("Ofreciste una elección entre dos opciones concretas de cierre, no un sí/no genérico.");
+  else debiles.push("No ofreciste dos opciones de cierre: es el punto marcado como Crítico en la hoja de evaluación.");
+
+  if (duracionSegundos != null) {
+    const min = Math.round(duracionSegundos / 60);
+    if (min > 60) debiles.push(`La llamada duró ${min} min: se alargó más de lo razonable para una venta 1:1.`);
+    else if (min < 8) debiles.push(`La llamada duró solo ${min} min: probablemente no diste tiempo a completar las fases.`);
+  }
+
   const ejercicio = !m.pidio_cierre
     ? "Haz un roleplay entero cuyo único objetivo sea pedir la venta de forma directa antes del minuto 15."
     : m.ratio_habla != null && m.ratio_habla > 0.4
@@ -145,7 +215,8 @@ function feedbackHeuristico(m: MetricasTranscripcion): Pick<
 function construirPrompt(
   persona: Persona,
   transcript: TranscriptTurn[],
-  m: MetricasTranscripcion
+  m: MetricasTranscripcion,
+  duracionSegundos?: number | null
 ): string {
   const rubrica = RUBRICA.map((r) => `${r.id}. [${r.fase} — ${FASE_LABEL[r.fase]}] ${r.texto}`).join("\n");
   const metricas = [
@@ -157,6 +228,9 @@ function construirPrompt(
     `- Silencio sostenido tras el precio: ${m.silencio_tras_precio_secs ?? "?"} s`,
     `- Petición de cierre detectada: ${m.pidio_cierre ? "sí" : "no"}`,
     `- Siguiente paso agendado: ${m.agendo_siguiente_paso ? "sí" : "no"}`,
+    `- Dos opciones de cierre detectadas: ${m.dos_opciones_detectado ? "sí" : "no"}`,
+    `- Tie-downs detectados: ${m.tie_downs_count}`,
+    `- Duración total de la llamada: ${duracionSegundos != null ? `${Math.round(duracionSegundos / 60)} min` : "desconocida"}`,
   ].join("\n");
 
   return `Eres un coach de ventas que evalúa una llamada de entrenamiento con la metodología MECI (Mapeo, Empuje, Cierre, Implementación) de Top Closing.
@@ -182,8 +256,8 @@ Reglas de evaluación:
 
 Responde SOLO con un objeto JSON válido con esta forma exacta:
 {
-  "item_scores": { "1": 1-5, ..., "17": 1-5 },
-  "evidencias": { "1": "cita o motivo", ..., "17": "..." },
+  "item_scores": { "1": 1-5, ..., "${RUBRICA[RUBRICA.length - 1].id}": 1-5 },
+  "evidencias": { "1": "cita o motivo", ..., "${RUBRICA[RUBRICA.length - 1].id}": "..." },
   "puntos_fuertes": ["2-4 frases"],
   "puntos_debiles": ["2-4 frases"],
   "momento_clave_positivo": "dónde ganó la llamada, con cita",
@@ -259,11 +333,12 @@ export async function evaluarSesion(
   sessionId: string,
   userId: string,
   persona: Persona,
-  transcript: TranscriptTurn[]
+  transcript: TranscriptTurn[],
+  duracionSegundos?: number | null
 ): Promise<AutoEvaluationInput> {
   const metricas = analizarTranscripcion(transcript);
-  const respaldo = puntuacionHeuristica(transcript, metricas);
-  const feedbackBase = feedbackHeuristico(metricas);
+  const respaldo = puntuacionHeuristica(transcript, metricas, duracionSegundos);
+  const feedbackBase = feedbackHeuristico(metricas, duracionSegundos);
 
   let scores = respaldo.scores;
   let evidencias = respaldo.evidencias;
@@ -281,7 +356,7 @@ export async function evaluarSesion(
     error = "La transcripción está vacía o es demasiado corta para evaluar la llamada.";
   } else {
     try {
-      const { respuesta, modelo: usado } = await llamarLLM(construirPrompt(persona, transcript, metricas));
+      const { respuesta, modelo: usado } = await llamarLLM(construirPrompt(persona, transcript, metricas, duracionSegundos));
       modelo = usado;
 
       // Se rellena ítem a ítem: lo que el LLM no devuelva se queda con la heurística.

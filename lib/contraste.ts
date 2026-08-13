@@ -22,7 +22,7 @@ export function construirContraste(auto: AutoEvaluation, propia: Evaluation): Co
 }
 
 export interface ResumenContraste {
-  /** propia - auto sobre el total de 85. */
+  /** propia - auto sobre TOTAL_MAX (lib/rubrica.ts). */
   desvioTotal: number;
   /** Ítems donde se puntuó bastante más alto de lo que respalda la transcripción. */
   sobrevalorados: ContrasteItem[];

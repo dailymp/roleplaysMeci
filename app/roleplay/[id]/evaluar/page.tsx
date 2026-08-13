@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RoleplaySession, Persona, Objecion, AutoEvaluation } from "@/lib/types";
-import { RUBRICA, FASE_LABEL, FASE_COLOR, calcularTotales } from "@/lib/rubrica";
+import { RUBRICA, FASE_LABEL, FASE_COLOR, TOTAL_MAX, calcularTotales } from "@/lib/rubrica";
 import PuntuacionSelector from "@/components/PuntuacionSelector";
 import AutoevaluacionPanel from "@/components/AutoevaluacionPanel";
 
@@ -96,7 +96,7 @@ export default function EvaluarPage() {
 
   async function handleSubmit() {
     if (!itemsCompletos) {
-      setError("Puntúa los 17 ítems antes de guardar.");
+      setError(`Puntúa los ${RUBRICA.length} ítems antes de guardar.`);
       return;
     }
     setSaving(true);
@@ -264,7 +264,7 @@ export default function EvaluarPage() {
       <div className="card sticky bottom-4 mt-6 flex items-center justify-between p-4">
         <div>
           <p className="text-xs text-muted">Total</p>
-          <p className="text-lg font-bold">{totales.total} / 85</p>
+          <p className="text-lg font-bold">{totales.total} / {TOTAL_MAX}</p>
         </div>
         <div className="flex items-center gap-3">
           {error && <p className="text-xs font-medium text-critical">{error}</p>}

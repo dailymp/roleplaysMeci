@@ -57,7 +57,14 @@ export async function POST() {
     // Sin conversación real no hay nada que evaluar: se queda como finalizada vacía.
     if (transcript.length >= 2) {
       try {
-        await generarYGuardarAutoevaluacion(supabase, sesion.id, user.id, transcript, sesion.persona_id);
+        await generarYGuardarAutoevaluacion(
+          supabase,
+          sesion.id,
+          user.id,
+          transcript,
+          sesion.persona_id,
+          recuperada.durationSeconds ?? sesion.duration_seconds
+        );
       } catch {
         // La sesión ya está cerrada; se puede reintentar desde /api/session/evaluate.
       }

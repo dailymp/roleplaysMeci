@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Evaluation, RoleplaySession } from "@/lib/types";
-import { FASE_LABEL, bandaColor } from "@/lib/rubrica";
+import { FASE_LABEL, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
 import EvolutionChart, { EvolutionPoint } from "@/components/EvolutionChart";
 
 export default function DashboardPage() {
@@ -93,7 +93,7 @@ export default function DashboardPage() {
         />
         <StatTile
           label="Promedio (últimas 5)"
-          value={promedioReciente != null ? `${promedioReciente}/85` : "—"}
+          value={promedioReciente != null ? `${promedioReciente}/${TOTAL_MAX}` : "—"}
           tone={promedioReciente != null ? undefined : undefined}
           color={promedioReciente != null ? bandaColor(promedioReciente) : undefined}
         />

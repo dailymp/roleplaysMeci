@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { bandaColor } from "@/lib/rubrica";
+import { bandaColor, TOTAL_MAX } from "@/lib/rubrica";
 
 interface Row {
   id: string;
@@ -102,7 +102,7 @@ export default function SesionesPage() {
                     color: bandaColor(r.total_score ?? 0),
                   }}
                 >
-                  {r.total_score} / 85
+                  {r.total_score} / {TOTAL_MAX}
                 </span>
               )}
             </div>

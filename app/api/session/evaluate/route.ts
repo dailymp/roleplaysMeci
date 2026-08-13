@@ -38,7 +38,8 @@ export async function POST(req: Request) {
       sessionId,
       user.id,
       transcript,
-      session.persona_id as string
+      session.persona_id as string,
+      session.duration_seconds as number | null
     );
     return NextResponse.json({ ok: true, evaluacion });
   } catch (e) {
