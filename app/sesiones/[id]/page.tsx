@@ -5,8 +5,16 @@ import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RoleplaySession, Evaluation, Persona, Objecion, AutoEvaluation } from "@/lib/types";
 import { RUBRICA, FASE_LABEL, FASE_COLOR, FASE_MAX, TOTAL_MAX, bandaColor } from "@/lib/rubrica";
+import {
+  NIVEL3,
+  NIVEL3_BLOQUE_LABEL,
+  NIVEL3_MARCA_COLOR,
+  NIVEL3_MARCA_LABEL,
+  NIVEL3_MAX,
+  calcularNivel3,
+} from "@/lib/nivel3";
 import { construirContraste, resumirContraste, type ResumenContraste } from "@/lib/contraste";
-import type { ContrasteItem } from "@/lib/types";
+import type { ContrasteItem, Nivel3Bloque, Nivel3Marca } from "@/lib/types";
 import AutoevaluacionPanel from "@/components/AutoevaluacionPanel";
 
 const FASES = ["M", "E", "C", "I"] as const;
@@ -76,6 +84,7 @@ export default function SesionDetallePage() {
       {auto && (
         <div className="mt-4">
           <AutoevaluacionPanel auto={auto} nombreProspecto={persona?.nombre} />
+          <HojaNivel3 evaluation={auto} />
         </div>
       )}
 
@@ -205,7 +214,7 @@ export default function SesionDetallePage() {
           )}
 
           <div className="card mt-4 p-5">
-            <h2 className="text-sm font-bold">Detalle por ítem</h2>
+            <h2 className="text-sm font-bold">Detalle por ítem — rúbrica MECI</h2>
             <div className="mt-3 flex flex-col gap-2">
               {RUBRICA.map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 text-xs">
@@ -243,6 +252,81 @@ export default function SesionDetallePage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * La hoja del coach, con sus mismas casillas y su misma escala.
+ *
+ * Va ANTES del detalle MECI a propósito: es con esta con la que le corrigen
+ * de verdad, y la que tiene que poder poner al lado del PDF del coach para
+ * que las líneas se correspondan una a una.
+ */
+function HojaNivel3({ evaluation }: { evaluation: AutoEvaluation }) {
+  const marcas = evaluation.nivel3_marcas ?? {};
+  // Evaluaciones anteriores a esta hoja: no se inventa un resultado.
+  if (Object.keys(marcas).length === 0) return null;
+
+  const t = calcularNivel3(marcas);
+  const bloques = Object.keys(NIVEL3_BLOQUE_LABEL) as Nivel3Bloque[];
+
+  return (
+    <div className="card mt-4 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-bold">Hoja de Revisión Nivel 3</h2>
+        <p className="text-sm font-bold">
+          {t.puntos}
+          <span className="text-muted">/{NIVEL3_MAX} · {t.porcentaje}%</span>
+        </p>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-3 text-xs text-ink-secondary">
+        {(["si", "mejorable", "no"] as Nivel3Marca[]).map((m) => (
+          <span key={m}>
+            <span className="font-bold" style={{ color: NIVEL3_MARCA_COLOR[m] }}>
+              {t.cuenta[m]}
+            </span>{" "}
+            {NIVEL3_MARCA_LABEL[m]}
+          </span>
+        ))}
+      </div>
+
+      <p className="mt-2 text-xs text-ink-secondary">{t.veredicto}</p>
+
+      {bloques.map((b) => (
+        <div key={b} className="mt-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted">
+              {NIVEL3_BLOQUE_LABEL[b]}
+            </h3>
+            <span className="flex-shrink-0 text-xs font-semibold text-muted">
+              {t.porBloque[b].puntos}/{t.porBloque[b].max}
+              {b === t.bloqueDebil && <span className="ml-1 text-critical">· más flojo</span>}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-col gap-2">
+            {NIVEL3.filter((i) => i.bloque === b).map((item) => {
+              const marca = marcas[String(item.id)] ?? "no";
+              const evidencia = evaluation.nivel3_evidencias?.[String(item.id)];
+              return (
+                <div key={item.id} className="rounded-lg border border-hairline p-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-ink-secondary">{item.texto}</p>
+                    <span
+                      className="flex-shrink-0 rounded-md px-2 py-0.5 font-bold text-white"
+                      style={{ backgroundColor: NIVEL3_MARCA_COLOR[marca] }}
+                    >
+                      {NIVEL3_MARCA_LABEL[marca]}
+                    </span>
+                  </div>
+                  {evidencia && <p className="mt-1 italic text-muted">{evidencia}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import {
   AutoEvaluationInput,
   MetricasTranscripcion,
+  Nivel3Marca,
   Persona,
   TranscriptTurn,
 } from "./types";
 import { RUBRICA, FASE_LABEL, calcularTotales } from "./rubrica";
+import { NIVEL3, NIVEL3_BLOQUE_LABEL } from "./nivel3";
 import { analizarTranscripcion, formatearTranscripcion } from "./analisis-transcripcion";
 
 /**
@@ -24,6 +26,16 @@ interface RespuestaLLM {
   frase_dolor_real: string | null;
   ejercicio_siguiente: string | null;
   resumen: string;
+  nivel3_marcas: Record<string, string>;
+  nivel3_evidencias: Record<string, string>;
+}
+
+const MARCAS_VALIDAS: ReadonlySet<string> = new Set<Nivel3Marca>(["si", "mejorable", "no"]);
+
+function comoMarca(valor: unknown): Nivel3Marca | null {
+  if (typeof valor !== "string") return null;
+  const v = valor.trim().toLowerCase().replace("í", "i");
+  return MARCAS_VALIDAS.has(v) ? (v as Nivel3Marca) : null;
 }
 
 function clamp(n: number): number {
@@ -162,6 +174,101 @@ export function puntuacionHeuristica(
   return { scores, evidencias };
 }
 
+/** Minuto:segundo legible, para las evidencias de tiempo. */
+function ms(segundos: number): string {
+  return `${Math.floor(segundos / 60)}:${String(Math.round(segundos % 60)).padStart(2, "0")}`;
+}
+
+/**
+ * Marcas Nivel 3 de respaldo, sólo con las señales deterministas.
+ *
+ * Es conservador a propósito: un patrón que encaja demuestra que la casilla
+ * SE TOCÓ, no que se hiciera bien, así que casi todo lo detectado se queda en
+ * "mejorable" y sube a "sí" únicamente cuando hay un criterio objetivo que lo
+ * respalde (un tiempo dentro de objetivo, la pregunta en el sitio correcto).
+ * Lo que no aparece es "no", que es exactamente lo que hace la hoja del coach.
+ */
+export function marcasHeuristicas(m: MetricasTranscripcion): {
+  marcas: Record<string, Nivel3Marca>;
+  evidencias: Record<string, string>;
+} {
+  const s = m.nivel3;
+  const marcas: Record<string, Nivel3Marca> = {};
+  const evidencias: Record<string, string> = {};
+  const set = (id: number, marca: Nivel3Marca, ev: string) => {
+    marcas[String(id)] = marca;
+    evidencias[String(id)] = ev;
+  };
+  const bin = (id: number, ok: boolean, siOk: string, siNo: string) =>
+    set(id, ok ? "mejorable" : "no", ok ? siOk : siNo);
+
+  // 1 · Rapport: se aproxima por si se fue a vender de inmediato.
+  const precioTemprano = m.precio_mencionado_secs != null && m.precio_mencionado_secs < 120;
+  set(
+    1,
+    precioTemprano ? "no" : "mejorable",
+    precioTemprano
+      ? "Se habló de precio antes del minuto 2: no hubo rapport real."
+      : "No se fue a vender en los primeros 2 minutos."
+  );
+  bin(2, s.agradecio_tiempo, "Hay agradecimiento explícito por el tiempo.", "No se detecta agradecimiento por el tiempo.");
+  bin(3, s.pregunto_tomador_decisiones, "Se pregunta por quién decide.", "No se pregunta por el tomador de decisiones.");
+  bin(4, s.presentacion_con_autoridad, "Hay presentación con credenciales.", "No se detecta una presentación que genere autoridad.");
+  bin(5, s.dio_proposito, "Se enuncia el propósito de la llamada.", "No se detecta el propósito de la llamada.");
+
+  if (s.pregunta_ayuda_secs == null) {
+    set(6, "no", 'No aparece "¿cómo te podemos ayudar?".');
+  } else if (s.ayuda_fue_primera_pregunta) {
+    set(6, "si", `Fue la primera pregunta, en el ${ms(s.pregunta_ayuda_secs)}.`);
+  } else {
+    set(6, "mejorable", `Aparece en el ${ms(s.pregunta_ayuda_secs)}, pero después de otras preguntas.`);
+  }
+
+  if (s.hoja_vida_secs == null) {
+    set(7, "no", "No se detecta transición a la hoja de vida ni pantalla compartida.");
+  } else if (s.hoja_vida_secs <= 240) {
+    set(7, "si", `Hoja de vida en el ${ms(s.hoja_vida_secs)}, dentro de los 3-4 min objetivo.`);
+  } else {
+    set(7, "mejorable", `Hoja de vida en el ${ms(s.hoja_vida_secs)}: el objetivo son los primeros 3-4 min.`);
+  }
+
+  bin(8, s.tres_razones, "Se enuncian las tres razones.", "No se detectan las 3 razones por las que necesita su ayuda.");
+
+  // Bloque emocional.
+  set(
+    9,
+    m.preguntas_daily >= 6 ? "mejorable" : "no",
+    `${m.preguntas_daily} preguntas en toda la llamada: por debajo de 6 es difícil llegar al dolor real.`
+  );
+  set(10, m.preguntas_daily >= 3 ? "mejorable" : "no", `${m.preguntas_daily} preguntas de Daily.`);
+  bin(11, /* urgencia */ false, "", "La urgencia necesita lectura semántica: sin LLM se marca No.");
+  bin(12, s.pregunto_sentimiento, "Se pregunta por cómo le hace sentir.", "No se pregunta por el sentimiento: sólo por datos.");
+  bin(13, s.pregunto_otras_areas, "Se lleva el problema a otras áreas de su vida.", "No se pregunta si afecta a otras áreas de su vida.");
+  bin(14, s.recopilo_problemas, "Se devuelve la lista de problemas junta.", "No se recopilan los problemas: se tratan sueltos.");
+  bin(15, s.historia_personal, "Se saca la historia personal.", "No se pregunta por la historia personal.");
+  set(16, "no", "Las metas necesitan lectura semántica: sin LLM se marca No.");
+
+  // Bloque lógico.
+  bin(17, s.cuadro_comparativo, "Se contrapone situación actual y deseada.", "No se detecta cuadro comparativo.");
+  bin(18, s.pregunta_compromiso, "Hay pregunta de compromiso.", "No se detecta pregunta de compromiso.");
+  bin(19, s.contexto_closing, "Se anticipa qué pasará al final.", "No se da contexto del closing.");
+  bin(20, s.uso_calculadora, "Se llega a la calculadora.", "No se detecta transición a la calculadora.");
+
+  if (!s.uso_calculadora) {
+    set(21, "no", "No se usó la calculadora.");
+  } else if (s.sugirio_valor) {
+    // Esta es la única casilla que baja a "no" habiéndose ejecutado: sugerir
+    // la cifra no es hacerlo regular, es invalidar el ejercicio.
+    set(21, "no", "La primera cifra tras abrir la calculadora la dijo Daily, no el prospecto.");
+  } else {
+    set(21, "si", "Las cifras las puso el prospecto.");
+  }
+
+  bin(22, s.transicion_pitch, "Hay frase de puente al pitch.", "No se detecta transición al pitch.");
+
+  return { marcas, evidencias };
+}
+
 function feedbackHeuristico(
   m: MetricasTranscripcion,
   duracionSegundos?: number | null
@@ -233,6 +340,22 @@ function construirPrompt(
     `- Duración total de la llamada: ${duracionSegundos != null ? `${Math.round(duracionSegundos / 60)} min` : "desconocida"}`,
   ].join("\n");
 
+  const s = m.nivel3;
+  const tiemposNivel3 = [
+    `- Hoja de vida / pantalla compartida en el segundo: ${s.hoja_vida_secs ?? "nunca"} (objetivo: antes de 240)`,
+    `- "¿Cómo te podemos ayudar?" en el segundo: ${s.pregunta_ayuda_secs ?? "nunca"}; ¿fue la primera pregunta?: ${
+      s.ayuda_fue_primera_pregunta == null ? "no aparece" : s.ayuda_fue_primera_pregunta ? "sí" : "no"
+    }`,
+    `- Fin del descubrimiento (segundo): ${s.descubrimiento_secs ?? "no se llegó al pitch"} (objetivo: 900-1020)`,
+    `- Tras abrir la calculadora, la primera cifra la dijo: ${
+      !s.uso_calculadora ? "no se abrió la calculadora" : s.sugirio_valor ? "DAILY (sugirió el valor: falta grave)" : "el prospecto"
+    }`,
+  ].join("\n");
+
+  const hojaNivel3 = NIVEL3.map(
+    (i) => `${i.id}. [${NIVEL3_BLOQUE_LABEL[i.bloque]}] ${i.texto}\n   Criterio: ${i.criterio}`
+  ).join("\n");
+
   return `Eres un coach de ventas que evalúa una llamada de entrenamiento con la metodología MECI (Mapeo, Empuje, Cierre, Implementación) de Top Closing.
 
 DAILY es la comercial que está entrenando. El prospecto es un personaje simulado llamado ${persona.nombre}: ${persona.situacion}
@@ -242,8 +365,18 @@ Su condición para cerrar era: ${persona.condicion_cierre}
 RÚBRICA — puntúa cada ítem de 1 a 5, donde 1 = no lo hizo, 3 = lo intentó de forma incompleta, 5 = lo ejecutó de manual:
 ${rubrica}
 
+SEGUNDA HOJA — "REVISIÓN NIVEL 3". Es la hoja con la que su coach humano corrige de verdad.
+Aquí la escala NO es 1-5: es exactamente "si", "mejorable" o "no".
+- "si": lo hizo, y bien, con evidencia literal.
+- "mejorable": lo hizo pero incompleto, a destiempo o de trámite.
+- "no": no aparece en la transcripción.
+${hojaNivel3}
+
 MÉTRICAS OBJETIVAS YA CALCULADAS (no las contradigas, son medidas, no opiniones):
 ${metricas}
+
+TIEMPOS Y HECHOS DE LA HOJA NIVEL 3 (medidos, no opinables):
+${tiemposNivel3}
 
 TRANSCRIPCIÓN:
 ${formatearTranscripcion(transcript, persona.nombre)}
@@ -252,6 +385,8 @@ Reglas de evaluación:
 - Sé exigente. Un 5 exige evidencia literal en la transcripción.
 - Si un ítem no aplica porque la llamada no llegó ahí (p. ej. no hubo cierre), puntúalo bajo, no neutro.
 - Cada evidencia debe ser una cita literal breve de la transcripción, o "sin evidencia en la transcripción".
+- En la hoja Nivel 3, los tiempos medidos mandan sobre tu impresión: si la hoja de vida llegó después del segundo 240, esa casilla no puede ser "si".
+- Si tras abrir la calculadora la primera cifra la dijo Daily, el ítem 21 es "no" aunque el resto del ejercicio estuviera bien hecho: sugerir el valor invalida el ejercicio.
 - Escribe todo en español, tuteando a Daily, directo y sin adornos.
 
 Responde SOLO con un objeto JSON válido con esta forma exacta:
@@ -264,7 +399,9 @@ Responde SOLO con un objeto JSON válido con esta forma exacta:
   "momento_clave_negativo": "dónde la perdió, con cita",
   "frase_dolor_real": "frase literal del prospecto que revela su dolor real, o null",
   "ejercicio_siguiente": "un único ejercicio concreto para la próxima sesión",
-  "resumen": "3-5 frases de feedback global dirigidas a Daily"
+  "resumen": "3-5 frases de feedback global dirigidas a Daily",
+  "nivel3_marcas": { "1": "si|mejorable|no", ..., "${NIVEL3[NIVEL3.length - 1].id}": "si|mejorable|no" },
+  "nivel3_evidencias": { "1": "cita literal o motivo", ..., "${NIVEL3[NIVEL3.length - 1].id}": "..." }
 }`;
 }
 
@@ -338,10 +475,13 @@ export async function evaluarSesion(
 ): Promise<AutoEvaluationInput> {
   const metricas = analizarTranscripcion(transcript);
   const respaldo = puntuacionHeuristica(transcript, metricas, duracionSegundos);
+  const respaldoNivel3 = marcasHeuristicas(metricas);
   const feedbackBase = feedbackHeuristico(metricas, duracionSegundos);
 
   let scores = respaldo.scores;
   let evidencias = respaldo.evidencias;
+  let nivel3Marcas = respaldoNivel3.marcas;
+  let nivel3Evidencias = respaldoNivel3.evidencias;
   let feedback: Pick<
     RespuestaLLM,
     "puntos_fuertes" | "puntos_debiles" | "ejercicio_siguiente" | "resumen"
@@ -368,6 +508,18 @@ export async function evaluarSesion(
         if (typeof valor === "number") scores[clave] = clamp(valor);
         const ev = comoTexto(respuesta.evidencias?.[clave]);
         if (ev) evidencias[clave] = ev;
+      }
+
+      // Igual con la hoja Nivel 3: lo que el LLM no devuelva —o devuelva con
+      // una marca inventada— se queda con lo que dicen las señales medidas.
+      nivel3Marcas = { ...respaldoNivel3.marcas };
+      nivel3Evidencias = { ...respaldoNivel3.evidencias };
+      for (const item of NIVEL3) {
+        const clave = String(item.id);
+        const marca = comoMarca(respuesta.nivel3_marcas?.[clave]);
+        if (marca) nivel3Marcas[clave] = marca;
+        const ev = comoTexto(respuesta.nivel3_evidencias?.[clave]);
+        if (ev) nivel3Evidencias[clave] = ev;
       }
 
       feedback = {
@@ -411,6 +563,8 @@ export async function evaluarSesion(
     frase_dolor_real: fraseDolor,
     ejercicio_siguiente: feedback.ejercicio_siguiente,
     resumen: feedback.resumen,
+    nivel3_marcas: nivel3Marcas,
+    nivel3_evidencias: nivel3Evidencias,
     error,
     modelo,
   };

@@ -100,6 +100,55 @@ export interface MetricasTranscripcion {
    * detectan precio/cierre/agenda (no son marcadores exactos, es una segmentación aproximada).
    */
   tiempo_por_fase: Record<Fase, number>;
+  /** Señales de la hoja de Revisión Nivel 3. Ver `senalesNivel3`. */
+  nivel3: SenalesNivel3;
+}
+
+/** Bloques de la hoja de Revisión Nivel 3, en el orden en que ocurren en la llamada. */
+export type Nivel3Bloque = "acondicionamiento" | "emocional" | "logico" | "pitch";
+
+/** La escala del coach. No es 1-5: es esto. */
+export type Nivel3Marca = "si" | "mejorable" | "no";
+
+/**
+ * Hechos medibles de la hoja Nivel 3, sacados de la transcripción sin LLM.
+ *
+ * Los tiempos son la mitad del valor: la corrección del coach no fue sólo
+ * "faltó X", fue "compartiste pantalla en el minuto 7" y "cronometra tus
+ * descubrimientos". Un booleano no habría recogido ninguna de las dos.
+ */
+export interface SenalesNivel3 {
+  /** Segundo en que aparece la hoja de vida / pantalla compartida. Objetivo: ≤ 240 s. */
+  hoja_vida_secs: number | null;
+  /** Segundo de la primera "¿cómo te podemos ayudar?". */
+  pregunta_ayuda_secs: number | null;
+  /** ¿Fue esa LA primera pregunta de Daily, o llegó después de otras? */
+  ayuda_fue_primera_pregunta: boolean | null;
+  /** Duración del bloque de descubrimiento hasta el pitch. Objetivo: 900-1020 s. */
+  descubrimiento_secs: number | null;
+  agradecio_tiempo: boolean;
+  pregunto_tomador_decisiones: boolean;
+  presentacion_con_autoridad: boolean;
+  dio_proposito: boolean;
+  tres_razones: boolean;
+  pregunto_sentimiento: boolean;
+  pregunto_otras_areas: boolean;
+  recopilo_problemas: boolean;
+  historia_personal: boolean;
+  cuadro_comparativo: boolean;
+  pregunta_compromiso: boolean;
+  contexto_closing: boolean;
+  uso_calculadora: boolean;
+  transicion_pitch: boolean;
+  /**
+   * Daily soltó una cifra de metas antes que el prospecto.
+   *
+   * Es la corrección más tajante de la hoja ("nunca sugieras un valor, deja
+   * que la persona lo diga") y la única que se puede volver del revés sin
+   * darse cuenta: en cuanto sugieres el número, deja de ser la meta del
+   * prospecto y pasa a ser la tuya, y el resto del ejercicio ya no mide nada.
+   */
+  sugirio_valor: boolean;
 }
 
 export interface ItemAutomatico {
@@ -130,6 +179,13 @@ export interface AutoEvaluation {
   frase_dolor_real: string | null;
   ejercicio_siguiente: string | null;
   resumen: string | null;
+  /**
+   * Hoja de Revisión Nivel 3: marca por ítem y cita que la justifica.
+   * Va aparte de `item_scores` porque es otra escala y otra taxonomía — ver
+   * la cabecera de `lib/nivel3.ts`.
+   */
+  nivel3_marcas: Record<string, Nivel3Marca>;
+  nivel3_evidencias: Record<string, string>;
   /** Null mientras el análisis no haya podido ejecutarse (LLM caído, sin transcripción…). */
   error: string | null;
   modelo: string | null;
